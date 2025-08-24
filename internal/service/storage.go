@@ -22,9 +22,7 @@ type ModelStorage interface {
 
 // StatusStorage defines the interface for persisting the service's operational state.
 type StatusStorage interface {
-	// GetStatus retrieves the current operational status of the service.
-	GetStatus(ctx context.Context) (domain.ServiceStatus, error)
-
-	// SetStatus updates the operational status of the service.
-	SetStatus(ctx context.Context, status domain.ServiceStatus) error
+	GetStatusDocument(ctx context.Context) (*domain.StatusDocument, error)
+	UpdateStatus(ctx context.Context, status domain.ServiceStatus) error
+	UpdateBackfillCursor(ctx context.Context, cursorURL string) error
 }

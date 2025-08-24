@@ -24,6 +24,7 @@ var linkHeaderRegex = regexp.MustCompile(`<([^>]+)>;\s*rel="next"`)
 // ScrapeResult holds the data returned from a single API call.
 type ScrapeResult struct {
 	Models  []domain.HuggingFaceModel
+	NextURL string
 }
 
 // Scraper is a client for the Hugging Face API.
@@ -48,6 +49,7 @@ func NewScraper(cfg config.ScraperConfig) *Scraper {
 // FetchModels fetches a single page of models from the given URL.
 // It respects the rate limit and parses the 'Link' header for the next page.
 func (s *Scraper) FetchModels(ctx context.Context, url string) (*ScrapeResult, error) {
+	// ... (rate limiting and request creation are the same)
 	if err := s.limiter.Wait(ctx); err != nil {
 		return nil, err
 	}
@@ -77,9 +79,15 @@ func (s *Scraper) FetchModels(ctx context.Context, url string) (*ScrapeResult, e
 		return nil, fmt.Errorf("failed to unmarshal json response: %w", err)
 	}
 
-	// Logic for parsing the Link header is completely removed.
+	// Re-introducing the logic to parse the Link header for the next page URL.
+	nextURL := ""
+	linkHeader := resp.Header.Get("Link")
+	if matches := linkHeaderRegex.FindStringSubmatch(linkHeader); len(matches) > 1 {
+		nextURL = matches[1]
+	}
 
 	return &ScrapeResult{
-		Models: models,
+		Models:  models,
+		NextURL: nextURL,
 	}, nil
 }

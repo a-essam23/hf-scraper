@@ -28,19 +28,45 @@ func NewMongoStatusStorage(db *mongo.Database, collectionName string) *MongoStat
 }
 
 // GetStatus implements the StatusStorage interface.
-func (s *MongoStatusStorage) GetStatus(ctx context.Context) (domain.ServiceStatus, error) {
+func (s *MongoStatusStorage) GetStatusDocument(ctx context.Context) (*domain.StatusDocument, error) {
 	var doc domain.StatusDocument
 	filter := bson.M{"_id": statusDocumentID}
 	err := s.collection.FindOne(ctx, filter).Decode(&doc)
 	if err != nil {
-		// If no document is found, it means we've never run before.
-		// Default to needing a backfill as per the design.
 		if errors.Is(err, mongo.ErrNoDocuments) {
-			return domain.StatusNeedsBackfill, nil
+			// Return a default, "first run" document.
+			return &domain.StatusDocument{
+				ID:     statusDocumentID,
+				Status: domain.StatusNeedsBackfill,
+			}, nil
 		}
-		return "", err
+		return nil, err
 	}
-	return doc.Status, nil
+	return &doc, nil
+}
+func (s *MongoStatusStorage) UpdateStatus(ctx context.Context, status domain.ServiceStatus) error {
+	filter := bson.M{"_id": statusDocumentID}
+	update := bson.M{
+		"$set": bson.M{
+			"status":    status,
+			"updatedAt": time.Now().UTC(),
+		},
+	}
+	opts := options.Update().SetUpsert(true)
+	_, err := s.collection.UpdateOne(ctx, filter, update, opts)
+	return err
+}
+func (s *MongoStatusStorage) UpdateBackfillCursor(ctx context.Context, cursorURL string) error {
+	filter := bson.M{"_id": statusDocumentID}
+	update := bson.M{
+		"$set": bson.M{
+			"backfillCursor": cursorURL,
+			"updatedAt":      time.Now().UTC(),
+		},
+	}
+	opts := options.Update().SetUpsert(true)
+	_, err := s.collection.UpdateOne(ctx, filter, update, opts)
+	return err
 }
 
 // SetStatus implements the StatusStorage interface.

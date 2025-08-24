@@ -15,9 +15,9 @@ import (
 
 const (
 	// The initial URL for the backfill process.
-	backfillStartURL = "https://huggingface.co/api/models?sort=createdAt&full=true&page=1&limit=100"
-	// The URL for the watch mode process.
-	watchStartURL = "https://huggingface.co/api/models?sort=lastModified&page=1&limit=100&full=true"
+	backfillStartURL = "https://huggingface.co/api/models?sort=createdAt&direction=1&full=true"
+	// Updated watch URL to include full=true and descending direction.
+	watchStartURL = "https://huggingface.co/api/models?sort=lastModified&direction=-1&full=true"
 
 	// Event topics
 	EventModeChange = "status:mode_change"
@@ -61,19 +61,19 @@ func NewService(
 // It is a long-running, blocking method.
 func (s *Service) Start(ctx context.Context) error {
 	log.Println("Service starting...")
-	initialStatus, err := s.statusStorage.GetStatus(ctx)
+	statusDoc, err := s.statusStorage.GetStatusDocument(ctx)
 	if err != nil {
 		return fmt.Errorf("could not determine initial service status: %w", err)
 	}
 
-	log.Printf("Initial status is: %s", initialStatus)
+	log.Printf("Initial status is: %s", statusDoc.Status)
 
-	if initialStatus == domain.StatusNeedsBackfill {
-		err := s.runBackfill(ctx)
+	if statusDoc.Status == domain.StatusNeedsBackfill {
+		// Pass the cursor to the backfill process.
+		err := s.runBackfill(ctx, statusDoc.BackfillCursor)
 		if err != nil {
 			return fmt.Errorf("backfill process failed: %w", err)
 		}
-		// After backfill, the status is updated, so we proceed directly to watching.
 	}
 
 	s.startWatcher(ctx)
@@ -87,53 +87,62 @@ func (s *Service) Stop() {
 }
 
 // runBackfill executes the one-time, historical data scrape.
-func (s *Service) runBackfill(ctx context.Context) error {
+// runBackfill is now corrected to ONLY use the NextURL from the scraper.
+// All manual page counting and URL formatting logic has been removed.
+func (s *Service) runBackfill(ctx context.Context, initialCursor string) error {
 	log.Println("Starting Backfill Mode...")
-	page := 0 // Start with the first page
+	currentURL := backfillStartURL
+	if initialCursor != "" {
+		log.Printf("Resuming backfill from saved cursor: %s", initialCursor)
+		currentURL = initialCursor
+	} else {
+		// This is a fresh backfill. Save the initial state immediately.
+		log.Println("Starting a fresh backfill. Saving initial state.")
+		if err := s.statusStorage.UpdateStatus(ctx, domain.StatusNeedsBackfill); err != nil {
+			log.Printf("Warning: failed to save initial status: %v", err)
+		}
+	}
 
-	for { // Loop indefinitely until we get an empty page
+	for currentURL != "" {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
-			// Construct the URL with the current page number
-			currentURL := fmt.Sprintf("%s&page=%d", backfillStartURL, page)
-
-			log.Printf("Backfill: Fetching page %d (%s)", page, currentURL)
+			log.Printf("Backfill: Fetching %s", currentURL)
 			result, err := s.scraper.FetchModels(ctx, currentURL)
 			if err != nil {
 				log.Printf("Error fetching page, will retry after 10s: %v", err)
-				time.Sleep(10 * time.Second) // Simple retry logic
+				time.Sleep(10 * time.Second)
 				continue
 			}
 
-			// The stop condition: if a page has no models, we're done.
-			if len(result.Models) == 0 {
-				log.Println("Backfill: Received an empty page. Assuming end of results.")
-				goto completion // Break out of the outer loop
-			}
-
-			log.Printf("Backfill: Storing %d models...", len(result.Models))
-			for _, model := range result.Models {
-				if err := s.modelStorage.Upsert(ctx, model); err != nil {
-					log.Printf("Warning: failed to upsert model %s: %v", model.ID, err)
+			if len(result.Models) > 0 {
+				log.Printf("Backfill: Storing %d models...", len(result.Models))
+				for _, model := range result.Models {
+					if err := s.modelStorage.Upsert(ctx, model); err != nil {
+						log.Printf("Warning: failed to upsert model %s: %v", model.ID, err)
+					}
 				}
 			}
 
-			page++ // Move to the next page
+			// Update the cursor bookmark AFTER the page is processed successfully.
+			if err := s.statusStorage.UpdateBackfillCursor(ctx, result.NextURL); err != nil {
+				log.Printf("CRITICAL: FAILED TO SAVE BACKFILL CURSOR. Error: %v", err)
+				// We add a small sleep to avoid a rapid failure loop on DB issues.
+				time.Sleep(10 * time.Second)
+			}
+
+			currentURL = result.NextURL
 		}
 	}
 
-completion:
 	log.Println("Backfill Mode completed.")
 	log.Println("Updating service status to WATCHING.")
-	if err := s.statusStorage.SetStatus(ctx, domain.StatusWatching); err != nil {
+	if err := s.statusStorage.UpdateStatus(ctx, domain.StatusWatching); err != nil {
 		return fmt.Errorf("failed to update status to WATCHING after backfill: %w", err)
 	}
 
-	// Announce the mode change to the rest of the application.
 	s.broker.Publish(EventModeChange, domain.StatusWatching)
-
 	return nil
 }
 
