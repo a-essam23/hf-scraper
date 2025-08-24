@@ -1,0 +1,27 @@
+# Path: configs/config.yaml
+#
+# Main configuration for the hf-scraper daemon.
+# Values can be overridden by environment variables, e.g., SERVER_PORT=9090.
+
+SERVER:
+  # The port for the read-only API server.
+  PORT: "8080"
+
+DATABASE:
+  # Required: The full connection string for your MongoDB instance.
+  # Example: "mongodb://user:password@localhost:27017"
+  URI: "mongodb://127.0.0.1:27017"
+  # The name of the database to use.
+  NAME: "hf-scraper"
+  # The name of the collection to store models in.
+  COLLECTION: "models"
+
+SCRAPER:
+  # The number of API requests to make per second to the Hugging Face API.
+  REQUESTS_PER_SECOND: 5
+  # The number of requests allowed in a short burst.
+  BURST_LIMIT: 10
+
+WATCHER:
+  # How often (in minutes) the service should check for updates in "Watch Mode".
+  INTERVAL_MINUTES: 5
