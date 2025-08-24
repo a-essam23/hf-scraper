@@ -1,0 +1,27 @@
+<!-- path: web/template/layout.html -->
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>HF Scraper</title>
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/@picocss/pico@1/css/pico.min.css"
+    />
+    <link rel="stylesheet" href="/static/css/style.css" />
+    <script src="/static/js/htmx.min.js" defer></script>
+  </head>
+  <body class="container" hx-boost="true">
+    <nav>
+      <ul>
+        <li>
+          <strong><a href="/">HF Scraper</a></strong>
+        </li>
+      </ul>
+    </nav>
+    <main>
+      {{ if .IsModelPage }} {{ template "model-content" . }} {{ else }} {{
+      template "index-content" . }} {{ end }}
+    </main>
+  </body>
+</html>

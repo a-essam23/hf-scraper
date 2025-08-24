@@ -1,0 +1,45 @@
+<!-- path: web/template/index.html -->
+{{ template "layout.html" . }}
+
+{{ define "index-content" }}
+<h1>Search Models</h1>
+<!-- This form will now get a response that updates both the table and pagination -->
+<form hx-get="/search" hx-target="#model-table-body" hx-swap="innerHTML" hx-indicator="#spinner">
+    <div class="grid">
+        <input type="search" name="q" placeholder="Search..." value="{{ .Query }}">
+        <select name="sort" onchange="this.form.requestSubmit()">
+            <option value="likes" {{ if eq .SortBy "likes" }}selected{{ end }}>Sort by Likes</option>
+            <option value="downloads" {{ if eq .SortBy "downloads" }}selected{{ end }}>Sort by Downloads</option>
+            <option value="lastModified" {{ if eq .SortBy "lastModified" }}selected{{ end }}>Sort by Last Modified
+            </option>
+        </select>
+        <select name="order" onchange="this.form.requestSubmit()">
+            <option value="-1" {{ if eq .SortOrder -1 }}selected{{ end }}>Descending</option>
+            <option value="1" {{ if eq .SortOrder 1 }}selected{{ end }}>Ascending</option>
+        </select>
+        <button type="submit">Search</button>
+    </div>
+</form>
+
+<div style="min-height: 40px;">
+    <progress id="spinner" class="htmx-indicator"></progress>
+</div>
+
+<table>
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Likes</th>
+            <th>Downloads</th>
+            <th>Last Modified</th>
+        </tr>
+    </thead>
+    <tbody id="model-table-body">
+        {{ template "model_table.html" . }}
+    </tbody>
+</table>
+
+<div id="pagination-links">
+    {{ template "pagination.html" . }}
+</div>
+{{ end }}

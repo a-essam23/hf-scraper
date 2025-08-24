@@ -1,0 +1,10 @@
+<!-- path: web/template/fragments/model_table.html -->
+{{ range .Models }}
+<tr>
+  <!-- CORRECTED LINK -->
+  <td><a href="/model/{{ .ID }}">{{ .ID }}</a></td>
+  <td>{{ .Likes }}</td>
+  <td>{{ .Downloads }}</td>
+  <td>{{ .LastModified.Format "2006-01-02" }}</td>
+</tr>
+{{ end }}

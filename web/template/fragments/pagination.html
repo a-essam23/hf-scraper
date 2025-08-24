@@ -1,0 +1,32 @@
+<!-- path: web/template/fragments/pagination.html -->
+<nav>
+  <ul>
+    {{ if gt .CurrentPage 1 }}
+    <li>
+      <a
+        href="/search?q={{ .Query }}&sort={{ .SortBy }}&order={{ .SortOrder }}&page={{ .PrevPage }}"
+        hx-get="/search?q={{ .Query }}&sort={{ .SortBy }}&order={{ .SortOrder }}&page={{ .PrevPage }}"
+        hx-target="#model-table-body"
+        hx-swap="innerHTML"
+        >Previous</a
+      >
+    </li>
+    {{ end }}
+  </ul>
+  <ul>
+    <li>Page {{ .CurrentPage }} of {{ .TotalPages }}</li>
+  </ul>
+  <ul>
+    {{ if lt .CurrentPage .TotalPages }}
+    <li>
+      <a
+        href="/search?q={{ .Query }}&sort={{ .SortBy }}&order={{ .SortOrder }}&page={{ .NextPage }}"
+        hx-get="/search?q={{ .Query }}&sort={{ .SortBy }}&order={{ .SortOrder }}&page={{ .NextPage }}"
+        hx-target="#model-table-body"
+        hx-swap="innerHTML"
+        >Next</a
+      >
+    </li>
+    {{ end }}
+  </ul>
+</nav>

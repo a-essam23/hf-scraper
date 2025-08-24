@@ -6,8 +6,10 @@ import (
 	"errors"
 
 	"hf-scraper/internal/domain"
+	"hf-scraper/internal/service"
 
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
@@ -15,6 +17,38 @@ import (
 // MongoModelStorage is the MongoDB implementation of the ModelStorage interface.
 type MongoModelStorage struct {
 	collection *mongo.Collection
+}
+
+func (s *MongoModelStorage) SearchModels(ctx context.Context, opts service.SearchOptions) ([]domain.HuggingFaceModel, int64, error) {
+	filter := bson.M{}
+	if opts.Query != "" {
+		// Using a case-insensitive regex search on the model ID.
+		filter["_id"] = primitive.Regex{Pattern: opts.Query, Options: "i"}
+	}
+
+	// Get total count for pagination
+	total, err := s.collection.CountDocuments(ctx, filter)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	findOptions := options.Find()
+	findOptions.SetSort(bson.D{{Key: opts.SortBy, Value: opts.SortOrder}})
+	findOptions.SetLimit(opts.Limit)
+	findOptions.SetSkip((opts.Page - 1) * opts.Limit)
+
+	cursor, err := s.collection.Find(ctx, filter, findOptions)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer cursor.Close(ctx)
+
+	var models []domain.HuggingFaceModel
+	if err = cursor.All(ctx, &models); err != nil {
+		return nil, 0, err
+	}
+
+	return models, total, nil
 }
 
 // NewMongoModelStorage creates a new storage adapter for models.

@@ -206,3 +206,21 @@ func (s *Service) runWatchCycle(ctx context.Context) {
 func (s *Service) GetModelByID(ctx context.Context, id string) (*domain.HuggingFaceModel, error) {
 	return s.modelStorage.FindByID(ctx, id)
 }
+
+// SearchModels provides a search and sort capability for the Delivery Layer.
+func (s *Service) SearchModels(ctx context.Context, opts SearchOptions) ([]domain.HuggingFaceModel, int64, error) {
+	// Add default sorting if not provided
+	if opts.SortBy == "" {
+		opts.SortBy = "likes"
+	}
+	if opts.SortOrder == 0 {
+		opts.SortOrder = -1 // Default to descending
+	}
+	if opts.Limit == 0 {
+		opts.Limit = 20 // Default page size
+	}
+	if opts.Page == 0 {
+		opts.Page = 1
+	}
+	return s.modelStorage.SearchModels(ctx, opts)
+}

@@ -1,0 +1,29 @@
+<!-- path: web/template/model.html -->
+{{ template "layout.html" . }} 
+{{ define "model-content" }}
+<a href="/">&larr; Back to Search</a>
+<article>
+  <header>
+    <h2>{{ .Model.ID }}</h2>
+  </header>
+  <p><strong>Author:</strong> {{ .Model.Author }}</p>
+  <p><strong>Likes:</strong> {{ .Model.Likes }}</p>
+  <p><strong>Downloads:</strong> {{ .Model.Downloads }}</p>
+  {{ $layout := "2006-01-02 15:04:05" }}
+  <p>
+    <strong>Last Modified:</strong> {{ .Model.LastModified.Format $layout }}
+  </p>
+  <p><strong>Created At:</strong> {{ .Model.CreatedAt.Format $layout }}</p>
+
+  <p><strong>SHA:</strong> <code>{{ .Model.SHA }}</code></p>
+  <p><strong>Private:</strong> {{ .Model.Private }}</p>
+  <p><strong>Gated:</strong> {{ .Model.Gated }}</p>
+  <p><strong>Pipeline Tag:</strong> <mark>{{ .Model.PipelineTag }}</mark></p>
+  <p><strong>Tags:</strong></p>
+  <ul>
+    {{ range .Model.Tags }}
+    <li>{{ . }}</li>
+    {{ end }}
+  </ul>
+</article>
+{{ end }}

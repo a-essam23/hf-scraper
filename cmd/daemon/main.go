@@ -14,7 +14,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 
 	"hf-scraper/internal/config"
-	"hf-scraper/internal/delivery/rest"
+	"hf-scraper/internal/delivery/ui"
 	"hf-scraper/internal/events"
 	"hf-scraper/internal/scraper"
 	"hf-scraper/internal/service"
@@ -41,53 +41,56 @@ func main() {
 	defer mongoClient.Disconnect(ctx)
 	db := mongoClient.Database(cfg.Database.Name)
 
-	// 4. Initialize Components (Layers 2 & Cross-cutting)
+	// 4. Initialize Components
 	log.Println("Initializing components...")
 	broker := events.NewBroker()
 	modelStore := storage.NewMongoModelStorage(db, cfg.Database.Collection)
 	statusStore := storage.NewMongoStatusStorage(db, cfg.Database.StatusCollection)
 	hfScraper := scraper.NewScraper(cfg.Scraper)
-
-	// 5. Initialize The Engine (Layer 3)
 	coreService := service.NewService(cfg.Watcher, cfg.Scraper, *hfScraper, modelStore, statusStore, broker)
 
-	// 6. Start the Engine in the background
+	// 5. Initialize and Start The Server (API and UI)
+	uiHandlers := ui.NewHandlers(coreService)
+	mux := http.NewServeMux()
+	uiHandlers.RegisterRoutes(mux) // Register all UI routes and static files
+
+	server := &http.Server{
+		Addr:         ":" + cfg.Server.Port,
+		Handler:      mux,
+		ReadTimeout:  5 * time.Second,
+		WriteTimeout: 10 * time.Second,
+		IdleTimeout:  15 * time.Second,
+	}
+
+	go func() {
+		log.Printf("Server starting on port %s", cfg.Server.Port)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Server failed: %v", err)
+		}
+	}()
+
+	// 6. Start the Engine
 	go func() {
 		if err := coreService.Start(ctx); err != nil {
 			log.Printf("Core service error: %v", err)
-			cancel() // Trigger shutdown on critical service error
+			cancel()
 		}
 	}()
 
-	// 7. Initialize and Start The API Server (Layer 4)
-	apiServer := rest.NewServer(cfg.Server.Port, coreService)
-	go func() {
-		log.Printf("API server starting on port %s", cfg.Server.Port)
-		if err := apiServer.Start(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("API server failed: %v", err)
-		}
-	}()
-
-	// 8. Wait for shutdown signal
+	// 7. Wait for shutdown signal
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
 	log.Println("Shutdown signal received. Shutting down gracefully...")
-
-	// Cancel the main context to signal background processes to stop
 	cancel()
 
-	// Give background processes time to stop
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutdownCancel()
 
-	// Stop the API server
-	if err := apiServer.Stop(shutdownCtx); err != nil {
-		log.Printf("Error during API server shutdown: %v", err)
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		log.Printf("Error during server shutdown: %v", err)
 	}
-
-	// The core service stops gracefully via the cancelled context. No need for an explicit Stop() call.
 
 	log.Println("Server shut down successfully.")
 }
