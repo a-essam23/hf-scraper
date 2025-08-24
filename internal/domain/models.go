@@ -27,7 +27,7 @@ func (gs *GatedStatus) UnmarshalJSON(data []byte) error {
 	var s string
 	if err := json.Unmarshal(data, &s); err == nil {
 		switch GatedStatus(s) {
-		case GatedStatusTrue, GatedStatusFalse, GatedStatusAuto:
+		case GatedStatusTrue, GatedStatusFalse, GatedStatusAuto, GatedStatusManual:
 			*gs = GatedStatus(s)
 			return nil
 		default:
