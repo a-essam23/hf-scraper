@@ -8,9 +8,13 @@ import (
 )
 
 // ModelStorage defines the interface for persisting HuggingFaceModel data.
+// ModelStorage defines the interface for persisting HuggingFaceModel data.
 type ModelStorage interface {
 	// Upsert inserts a new model or updates an existing one, identified by its ID.
 	Upsert(ctx context.Context, model domain.HuggingFaceModel) error
+
+	// BulkUpsert efficiently inserts or updates multiple models in a single operation.
+	BulkUpsert(ctx context.Context, models []domain.HuggingFaceModel) error
 
 	// FindByID retrieves a single model by its unique ID.
 	FindByID(ctx context.Context, id string) (*domain.HuggingFaceModel, error)

@@ -32,6 +32,25 @@ func (s *MongoModelStorage) Upsert(ctx context.Context, model domain.HuggingFace
 	return err
 }
 
+// BulkUpsert implements the ModelStorage interface.
+func (s *MongoModelStorage) BulkUpsert(ctx context.Context, models []domain.HuggingFaceModel) error {
+	if len(models) == 0 {
+		return nil
+	}
+
+	writeModels := make([]mongo.WriteModel, len(models))
+	for i, model := range models {
+		filter := bson.M{"_id": model.ID}
+		replacement := model
+		writeModels[i] = mongo.NewReplaceOneModel().SetFilter(filter).SetReplacement(replacement).SetUpsert(true)
+	}
+
+	// SetOrdered(false) allows MongoDB to process the operations in parallel, which is faster.
+	opts := options.BulkWrite().SetOrdered(false)
+	_, err := s.collection.BulkWrite(ctx, writeModels, opts)
+	return err
+}
+
 // FindByID implements the ModelStorage interface.
 func (s *MongoModelStorage) FindByID(ctx context.Context, id string) (*domain.HuggingFaceModel, error) {
 	var model domain.HuggingFaceModel

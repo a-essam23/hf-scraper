@@ -22,15 +22,17 @@ type ServerConfig struct {
 
 // DatabaseConfig holds the database connection settings.
 type DatabaseConfig struct {
-	URI        string `mapstructure:"uri"`
-	Name       string `mapstructure:"name"`
-	Collection string `mapstructure:"collection"`
+	URI              string `mapstructure:"uri"`
+	Name             string `mapstructure:"name"`
+	Collection       string `mapstructure:"collection"`
+	StatusCollection string `mapstructure:"status_collection"`
 }
 
 // ScraperConfig holds settings for the Hugging Face API scraper.
 type ScraperConfig struct {
-	RequestsPerSecond int `mapstructure:"requests_per_second"`
-	BurstLimit        int `mapstructure:"burst_limit"`
+	BaseURL           string `mapstructure:"base_url"`
+	RequestsPerSecond int    `mapstructure:"requests_per_second"`
+	BurstLimit        int    `mapstructure:"burst_limit"`
 }
 
 // WatcherConfig holds settings for the "Watch Mode" logic.
@@ -44,6 +46,8 @@ func Load() (*Config, error) {
 	viper.SetDefault("SERVER.PORT", "8080")
 	viper.SetDefault("DATABASE.NAME", "hf-scraper")
 	viper.SetDefault("DATABASE.COLLECTION", "models")
+	viper.SetDefault("DATABASE.STATUS_COLLECTION", "_status")
+	viper.SetDefault("SCRAPER.BASE_URL", "https://huggingface.co")
 	viper.SetDefault("SCRAPER.REQUESTS_PER_SECOND", 5)
 	viper.SetDefault("SCRAPER.BURST_LIMIT", 10)
 	viper.SetDefault("WATCHER.INTERVAL_MINUTES", 5)

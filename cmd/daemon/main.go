@@ -45,11 +45,11 @@ func main() {
 	log.Println("Initializing components...")
 	broker := events.NewBroker()
 	modelStore := storage.NewMongoModelStorage(db, cfg.Database.Collection)
-	statusStore := storage.NewMongoStatusStorage(db, "_status") // Use a dedicated collection
+	statusStore := storage.NewMongoStatusStorage(db, cfg.Database.StatusCollection)
 	hfScraper := scraper.NewScraper(cfg.Scraper)
 
 	// 5. Initialize The Engine (Layer 3)
-	coreService := service.NewService(cfg.Watcher, *hfScraper, modelStore, statusStore, broker)
+	coreService := service.NewService(cfg.Watcher, cfg.Scraper, *hfScraper, modelStore, statusStore, broker)
 
 	// 6. Start the Engine in the background
 	go func() {
@@ -87,8 +87,7 @@ func main() {
 		log.Printf("Error during API server shutdown: %v", err)
 	}
 
-	// The core service stops gracefully via the cancelled context.
-	coreService.Stop()
+	// The core service stops gracefully via the cancelled context. No need for an explicit Stop() call.
 
 	log.Println("Server shut down successfully.")
 }

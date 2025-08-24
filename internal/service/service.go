@@ -14,34 +14,24 @@ import (
 )
 
 const (
-	// The initial URL for the backfill process.
-	backfillStartURL = "https://huggingface.co/api/models?sort=createdAt&direction=1&full=true"
-	// Updated watch URL to include full=true and descending direction.
-	watchStartURL = "https://huggingface.co/api/models?sort=lastModified&direction=-1&full=true"
-
 	// Event topics
 	EventModeChange = "status:mode_change"
 )
 
-// Scraper defines the interface for a component that can fetch models.
-// This allows for mocking in tests.
-// type Scraper interface {
-// 	FetchModels(ctx context.Context, url string) (*ScrapeResult, error)
-// }
-
 // Service is the central orchestrator of the daemon's logic.
 type Service struct {
 	cfg           config.WatcherConfig
+	scraperCfg    config.ScraperConfig // Added for base URL
 	scraper       scraper.Scraper
 	modelStorage  ModelStorage
 	statusStorage StatusStorage
 	broker        *events.Broker
-	stopChan      chan struct{} // Used for graceful shutdown
 }
 
 // NewService creates a new core application service.
 func NewService(
 	cfg config.WatcherConfig,
+	scraperCfg config.ScraperConfig, // Added
 	scraper scraper.Scraper,
 	modelStorage ModelStorage,
 	statusStorage StatusStorage,
@@ -49,11 +39,11 @@ func NewService(
 ) *Service {
 	return &Service{
 		cfg:           cfg,
+		scraperCfg:    scraperCfg, // Added
 		scraper:       scraper,
 		modelStorage:  modelStorage,
 		statusStorage: statusStorage,
 		broker:        broker,
-		stopChan:      make(chan struct{}),
 	}
 }
 
@@ -72,6 +62,11 @@ func (s *Service) Start(ctx context.Context) error {
 		// Pass the cursor to the backfill process.
 		err := s.runBackfill(ctx, statusDoc.BackfillCursor)
 		if err != nil {
+			// If context was cancelled, it's a graceful shutdown, not an error.
+			if ctx.Err() == context.Canceled {
+				log.Println("Backfill process cancelled gracefully.")
+				return nil
+			}
 			return fmt.Errorf("backfill process failed: %w", err)
 		}
 	}
@@ -80,23 +75,16 @@ func (s *Service) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop gracefully shuts down the service's background processes.
-func (s *Service) Stop() {
-	log.Println("Service stopping...")
-	close(s.stopChan)
-}
-
 // runBackfill executes the one-time, historical data scrape.
-// runBackfill is now corrected to ONLY use the NextURL from the scraper.
-// All manual page counting and URL formatting logic has been removed.
 func (s *Service) runBackfill(ctx context.Context, initialCursor string) error {
 	log.Println("Starting Backfill Mode...")
+	backfillStartURL := fmt.Sprintf("%s/api/models?sort=createdAt&direction=1&full=true", s.scraperCfg.BaseURL)
+
 	currentURL := backfillStartURL
 	if initialCursor != "" {
 		log.Printf("Resuming backfill from saved cursor: %s", initialCursor)
 		currentURL = initialCursor
 	} else {
-		// This is a fresh backfill. Save the initial state immediately.
 		log.Println("Starting a fresh backfill. Saving initial state.")
 		if err := s.statusStorage.UpdateStatus(ctx, domain.StatusNeedsBackfill); err != nil {
 			log.Printf("Warning: failed to save initial status: %v", err)
@@ -118,17 +106,18 @@ func (s *Service) runBackfill(ctx context.Context, initialCursor string) error {
 
 			if len(result.Models) > 0 {
 				log.Printf("Backfill: Storing %d models...", len(result.Models))
-				for _, model := range result.Models {
-					if err := s.modelStorage.Upsert(ctx, model); err != nil {
-						log.Printf("Warning: failed to upsert model %s: %v", model.ID, err)
-					}
+				if err := s.modelStorage.BulkUpsert(ctx, result.Models); err != nil {
+					log.Printf("CRITICAL: FAILED TO BULK UPSERT MODELS. Error: %v", err)
+					// We add a small sleep to avoid a rapid failure loop on DB issues.
+					time.Sleep(10 * time.Second)
+					continue // Retry the same page after a delay
 				}
 			}
 
-			// Update the cursor bookmark AFTER the page is processed successfully.
+			// *** RESILIENCY FIX ***
+			// Update the cursor bookmark ONLY AFTER the page is processed successfully.
 			if err := s.statusStorage.UpdateBackfillCursor(ctx, result.NextURL); err != nil {
 				log.Printf("CRITICAL: FAILED TO SAVE BACKFILL CURSOR. Error: %v", err)
-				// We add a small sleep to avoid a rapid failure loop on DB issues.
 				time.Sleep(10 * time.Second)
 			}
 
@@ -159,11 +148,8 @@ func (s *Service) startWatcher(ctx context.Context) {
 		select {
 		case <-ticker.C:
 			s.runWatchCycle(ctx)
-		case <-s.stopChan:
-			log.Println("Watch Mode stopped.")
-			return
 		case <-ctx.Done():
-			log.Println("Watch Mode context cancelled.")
+			log.Println("Watch Mode stopped.")
 			return
 		}
 	}
@@ -172,14 +158,14 @@ func (s *Service) startWatcher(ctx context.Context) {
 // runWatchCycle performs a single check for new or updated models.
 func (s *Service) runWatchCycle(ctx context.Context) {
 	log.Println("Watch Cycle: Starting check for latest models.")
+	watchStartURL := fmt.Sprintf("%s/api/models?sort=lastModified&direction=-1&full=true", s.scraperCfg.BaseURL)
 
-	// 1. Establish the benchmark from our own database.
 	latestModel, err := s.modelStorage.FindMostRecentlyModified(ctx)
 	if err != nil {
 		log.Printf("Watch Cycle Error: could not get latest model from DB: %v", err)
 		return
 	}
-	// If the DB is empty, use a zero time. Any model will be newer.
+
 	latestKnownUpdate := time.Time{}
 	if latestModel != nil {
 		latestKnownUpdate = latestModel.LastModified
@@ -188,31 +174,29 @@ func (s *Service) runWatchCycle(ctx context.Context) {
 		log.Println("Watch Cycle: No existing models found. Will fetch all new models.")
 	}
 
-	// 2. Fetch the first page of the latest models from the API.
 	result, err := s.scraper.FetchModels(ctx, watchStartURL)
 	if err != nil {
 		log.Printf("Watch Cycle Error: failed to fetch from API: %v", err)
 		return
 	}
 
-	// 3. Iterate, compare, and stop when we see a model that is not new.
-	updateCount := 0
+	modelsToUpdate := make([]domain.HuggingFaceModel, 0)
 	for _, model := range result.Models {
 		if model.LastModified.After(latestKnownUpdate) {
-			if err := s.modelStorage.Upsert(ctx, model); err != nil {
-				log.Printf("Watch Cycle Warning: failed to upsert model %s: %v", model.ID, err)
-				continue
-			}
-			updateCount++
+			modelsToUpdate = append(modelsToUpdate, model)
 		} else {
-			// This is the key to efficiency: stop as soon as we see a model we already know about.
 			log.Println("Watch Cycle: Reached a model that is not new. Stopping check.")
 			break
 		}
 	}
 
-	if updateCount > 0 {
-		log.Printf("Watch Cycle: Finished. Upserted %d new or updated models.", updateCount)
+	if len(modelsToUpdate) > 0 {
+		log.Printf("Watch Cycle: Found %d new/updated models. Storing...", len(modelsToUpdate))
+		if err := s.modelStorage.BulkUpsert(ctx, modelsToUpdate); err != nil {
+			log.Printf("Watch Cycle Error: failed to bulk upsert models: %v", err)
+		} else {
+			log.Printf("Watch Cycle: Finished. Stored %d models.", len(modelsToUpdate))
+		}
 	} else {
 		log.Printf("Watch Cycle: Finished. No new updates found.")
 	}

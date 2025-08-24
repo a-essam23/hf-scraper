@@ -15,8 +15,12 @@ DATABASE:
   NAME: "hf-scraper"
   # The name of the collection to store models in.
   COLLECTION: "models"
+  # The name of the collection for storing the service's operational status.
+  STATUS_COLLECTION: "_status"
 
 SCRAPER:
+  # The base URL for the Hugging Face API.
+  BASE_URL: "https://huggingface.co"
   # The number of API requests to make per second to the Hugging Face API.
   REQUESTS_PER_SECOND: 2
   # The number of requests allowed in a short burst.
