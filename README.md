@@ -8,7 +8,7 @@ This service is designed to run continuously, first performing a full historical
 
 - **Autonomous Operation:** A "set it and forget it" daemon that manages its own data acquisition lifecycle.
 - **Smart Backfill & Watch Modes:** Intelligently performs a one-time historical scrape, then switches to a permanent, efficient update-watching mode.
-- **Stateful & Resilient:** Remembers its operational state across restarts to avoid unnecessary re-scraping.
+- **Stateful & Resilient:** Remembers its operational state and scraping progress across restarts to avoid data loss or unnecessary re-scraping.
 - **Rate-Limited & Retry-Enabled:** Respectfully interacts with the Hugging Face API with built-in rate limiting and resilience to network errors.
 - **Read-Only REST API:** Provides a fast and simple API to query the locally mirrored data.
 - **Clean, Layered Architecture:** Designed for maintainability and clarity.
@@ -60,10 +60,12 @@ All application settings are managed in `configs/config.yaml`. These values can 
 
 | Key                           | Type     | Description                                                                  |
 | ----------------------------- | -------- | ---------------------------------------------------------------------------- |
-| `SERVER_PORT`                 | `string` | The port for the read-only API server.                                       |
+| `SERVER.PORT`                 | `string` | The port for the read-only API server.                                       |
 | `DATABASE.URI`                | `string` | **Required.** The full connection string for your MongoDB instance.          |
 | `DATABASE.NAME`               | `string` | The name of the database to use.                                             |
 | `DATABASE.COLLECTION`         | `string` | The name of the collection to store models in.                               |
+| `DATABASE.STATUS_COLLECTION`  | `string` | The name of the collection for storing the service's status.                 |
+| `SCRAPER.BASE_URL`            | `string` | The base URL for the Hugging Face API.                                       |
 | `SCRAPER.REQUESTS_PER_SECOND` | `int`    | The number of API requests to make per second.                               |
 | `SCRAPER.BURST_LIMIT`         | `int`    | The number of requests allowed in a short burst.                             |
 | `WATCHER.INTERVAL_MINUTES`    | `int`    | How often (in minutes) the service should check for updates in "Watch Mode". |
@@ -93,7 +95,7 @@ curl http://localhost:8080/models/google-bert/bert-base-uncased
   "author": "google-bert",
   "sha": "...",
   "lastModified": "...",
-  "hf_createdAt": "...",
+  "createdAt": "...",
   "private": false,
   "gated": false,
   "likes": 1618,
